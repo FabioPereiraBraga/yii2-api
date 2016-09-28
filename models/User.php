@@ -1,14 +1,17 @@
 <?php
-
 namespace app\models;
 
-class User extends \yii\base\Object implements \yii\web\IdentityInterface
+use Yii;
+
+
+class User extends \yii\base\Object implements \yii\web\IdentityInterface , \OAuth2\Storage\UserCredentialsInterface
 {
     public $id;
     public $username;
     public $password;
     public $authKey;
     public $accessToken;
+
 
     private static $users = [
         '100' => [
@@ -41,13 +44,11 @@ class User extends \yii\base\Object implements \yii\web\IdentityInterface
      */
     public static function findIdentityByAccessToken($token, $type = null)
     {
-        foreach (self::$users as $user) {
-            if ($user['accessToken'] === $token) {
-                return new static($user);
-            }
-        }
-
-        return null;
+        $module = Yii::$app->getModule('oauth2');
+        $token = $module->getServer()->getResourceController()->getToken();
+        return !empty($token['user_id'])
+            ? static::findIdentity($token['user_id'])
+            : null;
     }
 
     /**
@@ -100,5 +101,55 @@ class User extends \yii\base\Object implements \yii\web\IdentityInterface
     public function validatePassword($password)
     {
         return $this->password === $password;
+    }
+
+    /**
+     * Grant access tokens for basic user credentials.
+     *
+     * Check the supplied username and password for validity.
+     *
+     * You can also use the $client_id param to do any checks required based
+     * on a client, if you need that.
+     *
+     * Required for OAuth2::GRANT_TYPE_USER_CREDENTIALS.
+     *
+     * @param $username
+     * Username to be check with.
+     * @param $password
+     * Password to be check with.
+     *
+     * @return
+     * TRUE if the username and password are valid, and FALSE if it isn't.
+     * Moreover, if the username and password are valid, and you want to
+     *
+     * @see http://tools.ietf.org/html/rfc6749#section-4.3
+     *
+     * @ingroup oauth2_section_4
+     */
+    public function checkUserCredentials($username, $password)
+    {
+        $user = static::findByUsername($username);
+        if (empty($user)) {
+            return false;
+        }
+        return $user->validatePassword($password);
+    }
+
+    /**
+     * @return
+     * ARRAY the associated "user_id" and optional "scope" values
+     * This function MUST return FALSE if the requested user does not exist or is
+     * invalid. "scope" is a space-separated list of restricted scopes.
+     * @code
+     * return array(
+     *     "user_id"  => USER_ID,    // REQUIRED user_id to be stored with the authorization code or access token
+     *     "scope"    => SCOPE       // OPTIONAL space-separated list of restricted scopes
+     * );
+     * @endcode
+     */
+    public function getUserDetails($username)
+    {
+        $user = static::findByUsername($username);
+        return ['user_id' => $user->getId()];
     }
 }
